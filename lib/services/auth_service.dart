@@ -84,8 +84,11 @@ class AuthService {
       
       return true;
     } catch (e) {
-      print('프로필 이미지 업데이트 실���: $e');
+      print('프로필 이미지 업데이트 실패: $e');
       return false;
     }
   }
+
+  // currentUser getter 추가
+  User? get currentUser => _auth.currentUser;
 } 

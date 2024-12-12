@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cross_file/cross_file.dart';
 import '../services/post_service.dart';
+import '../screens/main_screen.dart';
 
 class CreatePostScreen extends StatefulWidget {
   const CreatePostScreen({super.key});
@@ -12,143 +13,151 @@ class CreatePostScreen extends StatefulWidget {
 }
 
 class _CreatePostScreenState extends State<CreatePostScreen> {
-  final PostService _postService = PostService();
-  final _contentController = TextEditingController();
-  final List<XFile> _selectedMedia = [];
+  final TextEditingController _captionController = TextEditingController();
+  File? _image;
   bool _isLoading = false;
+  final PostService _postService = PostService();
 
-  @override
-  void dispose() {
-    _contentController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickMedia() async {
+  Future<void> _getImage() async {
     try {
       final ImagePicker picker = ImagePicker();
       final XFile? image = await picker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 1024,
-        maxHeight: 1024,
+        maxWidth: 1080,
+        maxHeight: 1080,
         imageQuality: 85,
       );
       
-      if (image == null) return;
-      
-      setState(() {
-        _selectedMedia.add(image);
-      });
+      if (image != null) {
+        setState(() {
+          _image = File(image.path);
+        });
+      }
     } catch (e) {
-      _showErrorSnackBar('이미지 선택 실패');
+      print('이미지 선택 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('이미지를 선택하는 중 오류가 발생했습니다')),
+        );
+      }
     }
   }
 
-  Future<void> _createPost() async {
-    if (_contentController.text.trim().isEmpty) {
-      _showErrorSnackBar('내용을 입력해주세요');
+  Future<void> _uploadPost() async {
+    if (_image == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('이미지를 선택해주세요')),
+      );
+      return;
+    }
+
+    if (_captionController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('내용을 입력해주세요')),
+      );
       return;
     }
 
     setState(() => _isLoading = true);
+
     try {
       await _postService.createPost(
-        content: _contentController.text.trim(),
-        images: _selectedMedia.isNotEmpty ? _selectedMedia : null,
+        imageFile: _image!,
+        caption: _captionController.text.trim(),
       );
       
       if (mounted) {
-        Navigator.of(context).pop(true);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('게시글이 작성되었습니다')),
+          const SnackBar(content: Text('게시물이 업로드되었습니다')),
+        );
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const MainScreen()),
+          (route) => false,
         );
       }
     } catch (e) {
-      _showErrorSnackBar('게시글 작성 실패');
+      print('게시물 업로드 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('게시물 업로드에 실패했습니다')),
+        );
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
-  void _removeMedia(int index) {
-    setState(() {
-      _selectedMedia.removeAt(index);
-    });
-  }
-
-  void _showErrorSnackBar(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+  @override
+  void dispose() {
+    _captionController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('새 게시글'),
+        title: const Text('새 게시물'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.check),
-            onPressed: _isLoading ? null : _createPost,
+          TextButton(
+            onPressed: _isLoading ? null : _uploadPost,
+            child: _isLoading
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                    ),
+                  )
+                : const Text('공유'),
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  TextField(
-                    controller: _contentController,
-                    maxLines: 5,
-                    decoration: const InputDecoration(
-                      hintText: '내용을 입력하세요',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  if (_selectedMedia.isNotEmpty)
-                    SizedBox(
-                      height: 100,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _selectedMedia.length,
-                        itemBuilder: (context, index) {
-                          return Stack(
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            AspectRatio(
+              aspectRatio: 1,
+              child: GestureDetector(
+                onTap: _isLoading ? null : _getImage,
+                child: Container(
+                  color: Colors.grey[200],
+                  child: _image != null
+                      ? Image.file(_image!, fit: BoxFit.cover)
+                      : const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: Image.file(
-                                  File(_selectedMedia[index].path),
-                                  height: 100,
-                                  width: 100,
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                              Positioned(
-                                right: 0,
-                                top: 0,
-                                child: IconButton(
-                                  icon: const Icon(Icons.close),
-                                  onPressed: () => _removeMedia(index),
-                                ),
-                              ),
+                              Icon(Icons.add_photo_alternate,
+                                  size: 60, color: Colors.grey),
+                              SizedBox(height: 16),
+                              Text('사진을 선택하세요',
+                                  style: TextStyle(color: Colors.grey)),
                             ],
-                          );
-                        },
-                      ),
-                    ),
-                  const SizedBox(height: 16),
-                  ElevatedButton.icon(
-                    onPressed: _selectedMedia.length >= 5 ? null : _pickMedia,
-                    icon: const Icon(Icons.add_photo_alternate),
-                    label: const Text('이미지 추가'),
-                  ),
-                ],
+                          ),
+                        ),
+                ),
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: TextField(
+                controller: _captionController,
+                enabled: !_isLoading,
+                decoration: const InputDecoration(
+                  hintText: '문구 입력...',
+                  border: InputBorder.none,
+                ),
+                maxLines: 3,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 } 

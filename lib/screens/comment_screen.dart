@@ -3,16 +3,18 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/comment_service.dart';
 import '../services/user_service.dart';
+import '../services/auth_service.dart';
+import '../models/comment.dart';
 
 class CommentScreen extends StatefulWidget {
   final String postId;
-  final String postAuthorId;
+  final String? postAuthorId;
 
   const CommentScreen({
-    super.key,
+    Key? key,
     required this.postId,
-    required this.postAuthorId,
-  });
+    this.postAuthorId,
+  }) : super(key: key);
 
   @override
   State<CommentScreen> createState() => _CommentScreenState();
@@ -21,6 +23,7 @@ class CommentScreen extends StatefulWidget {
 class _CommentScreenState extends State<CommentScreen> {
   final CommentService _commentService = CommentService();
   final UserService _userService = UserService();
+  final AuthService _authService = AuthService();
   final _commentController = TextEditingController();
   bool _isLoading = false;
 
@@ -37,8 +40,9 @@ class _CommentScreenState extends State<CommentScreen> {
     setState(() => _isLoading = true);
     try {
       await _commentService.createComment(
-        widget.postId,
-        content,
+        postId: widget.postId,
+        content: _commentController.text.trim(),
+        userId: _authService.currentUser?.uid ?? '',
       );
       _commentController.clear();
     } catch (e) {
@@ -127,9 +131,9 @@ class _CommentScreenState extends State<CommentScreen> {
       body: Column(
         children: [
           Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: _commentService.getCommentsStream(widget.postId),
-              builder: (context, snapshot) {
+            child: StreamBuilder<List<Comment>>(
+              stream: _commentService.getComments(widget.postId),
+              builder: (context, AsyncSnapshot<List<Comment>> snapshot) {
                 if (snapshot.hasError) {
                   return const Center(
                     child: Text('댓글을 불러오는데 실패했습니다'),
@@ -140,7 +144,7 @@ class _CommentScreenState extends State<CommentScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final comments = snapshot.data?.docs ?? [];
+                final comments = snapshot.data ?? [];
                 
                 if (comments.isEmpty) {
                   return const Center(
@@ -151,9 +155,9 @@ class _CommentScreenState extends State<CommentScreen> {
                 return ListView.builder(
                   itemCount: comments.length,
                   itemBuilder: (context, index) {
-                    final comment = comments[index].data() as Map<String, dynamic>;
-                    final commentId = comments[index].id;
-                    final authorId = comment['authorId'] as String;
+                    final comment = comments[index];
+                    final commentId = comment.id;
+                    final authorId = comment.userId;
 
                     return FutureBuilder<Map<String, dynamic>?>(
                       future: _userService.getCurrentUserProfile(),
@@ -172,7 +176,7 @@ class _CommentScreenState extends State<CommentScreen> {
                           title: Row(
                             children: [
                               Text(author?['displayName'] ?? '사용자'),
-                              if (authorId == widget.postAuthorId)
+                              if (widget.postAuthorId != null && authorId == widget.postAuthorId)
                                 Container(
                                   margin: const EdgeInsets.only(left: 8),
                                   padding: const EdgeInsets.symmetric(
@@ -198,10 +202,10 @@ class _CommentScreenState extends State<CommentScreen> {
                             children: [
                               Padding(
                                 padding: const EdgeInsets.symmetric(vertical: 4),
-                                child: Text(comment['content'] ?? ''),
+                                child: Text(comment.content ?? ''),
                               ),
                               Text(
-                                comment['createdAt']?.toDate()?.toString() ?? '',
+                                comment.createdAt.toString(),
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ],
@@ -213,7 +217,7 @@ class _CommentScreenState extends State<CommentScreen> {
                                       child: const Text('수정'),
                                       onTap: () => _editComment(
                                         commentId,
-                                        comment['content'],
+                                        comment.content,
                                       ),
                                     ),
                                     PopupMenuItem(

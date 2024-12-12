@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import 'storage_service.dart';
 import 'post_service.dart';
 import 'package:challenge1/utils/validators.dart';
+import 'package:challenge1/models/user.dart';
 
 class UserService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -194,6 +195,51 @@ class UserService {
     } catch (e) {
       print('사용자 계정 삭제 실패: $e');
       return false;
+    }
+  }
+
+  Stream<UserModel> getUserStream(String userId) {
+    print('Getting user stream for userId: $userId');
+    
+    return _firestore
+        .collection('users')
+        .doc(userId)
+        .snapshots()
+        .map((doc) {
+          try {
+            if (!doc.exists) {
+              print('Document does not exist for userId: $userId');
+              throw Exception('사용자를 찾을 수 없습니다');
+            }
+            
+            final data = doc.data();
+            if (data == null) {
+              print('Document data is null for userId: $userId');
+              throw Exception('사용자 데이터가 없습니다');
+            }
+            
+            return UserModel.fromMap(data);
+          } catch (e) {
+            print('Error in getUserStream: $e');
+            rethrow;
+          }
+        });
+  }
+
+  // 사용자 문서가 없는 경우 생성
+  Future<void> createUserIfNotExists(String userId) async {
+    final userDoc = await _firestore.collection('users').doc(userId).get();
+    
+    if (!userDoc.exists) {
+      print('Creating new user document for userId: $userId');
+      await _firestore.collection('users').doc(userId).set({
+        'id': userId,
+        'createdAt': FieldValue.serverTimestamp(),
+        // 기본값 설정
+        'username': '사용자',
+        'bio': '',
+        'profileImageUrl': null,
+      });
     }
   }
 } 

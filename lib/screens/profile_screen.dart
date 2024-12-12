@@ -1,159 +1,171 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import '../services/user_service.dart';
+import 'package:flutter/foundation.dart';
 import '../services/auth_service.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'login_screen.dart';
+import '../services/post_service.dart';
+import '../services/user_service.dart';
+import '../models/post.dart';
+import '../models/user.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   final String userId;
 
-  const ProfileScreen({super.key, required this.userId});
+  const ProfileScreen({
+    Key? key,
+    required this.userId,
+  }) : super(key: key);
 
-  Future<void> _signOut(BuildContext context) async {
-    try {
-      await FirebaseAuth.instance.signOut();
-      if (context.mounted) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (context) => const LoginScreen()),
-          (route) => false,
-        );
-      }
-    } catch (e) {
-      print('로그아웃 실패: $e');
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('로그아웃에 실패했습니다. 다시 시도해주세요.')),
-        );
-      }
-    }
+  @override
+  _ProfileScreenState createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  final AuthService _authService = AuthService();
+  final PostService _postService = PostService();
+  final UserService _userService = UserService();
+
+  @override
+  void initState() {
+    super.initState();
+    _checkUserDocument();
+  }
+
+  Future<void> _checkUserDocument() async {
+    await _userService.createUserIfNotExists(widget.userId);
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-
     return Scaffold(
       appBar: AppBar(
-        title: Text(user?.displayName ?? '프로필'),
+        title: Text('프로필'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.menu),
-            onPressed: () => _signOut(context),
+            icon: Icon(Icons.edit),
+            onPressed: () {
+              Navigator.pushNamed(context, '/edit-profile');
+            },
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
+      body: StreamBuilder<UserModel>(
+        stream: _userService.getUserStream(widget.userId),
+        builder: (context, userSnapshot) {
+          if (userSnapshot.hasError) {
+            print('Profile error: ${userSnapshot.error}');
+            return Center(
               child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // 프로필 정보
-                  Row(
-                    children: [
-                      // 프로필 이미지
-                      CircleAvatar(
-                        radius: 40,
-                        backgroundImage: user?.photoURL != null
-                            ? NetworkImage(user!.photoURL!)
-                            : null,
-                        child: user?.photoURL == null
-                            ? const Icon(Icons.person, size: 40)
-                            : null,
-                      ),
-                      const SizedBox(width: 24),
-                      // 게시물, 팔로워, 팔로잉 수
-                      Expanded(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            _buildStatColumn('게시물', '0'),
-                            _buildStatColumn('팔로워', '0'),
-                            _buildStatColumn('팔로잉', '0'),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  // 사용자 이름
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      user?.displayName ?? '사용자',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  // 프로필 수정 버튼
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: () {
-                        // TODO: 프로필 수정 화면으로 이동
-                      },
-                      style: OutlinedButton.styleFrom(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      child: const Text('프로필 수정'),
-                    ),
+                  Text('프로필을 불러오는데 실패했습니다'),
+                  if (kDebugMode)
+                    Text('Error: ${userSnapshot.error}'),
+                  ElevatedButton(
+                    onPressed: () {
+                      setState(() {});
+                    },
+                    child: Text('다시 시도'),
                   ),
                 ],
               ),
-            ),
-            // 게시물 그리드
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                crossAxisSpacing: 1,
-                mainAxisSpacing: 1,
-              ),
-              itemCount: 0, // TODO: 실제 게시물 수로 변경
-              itemBuilder: (context, index) {
-                return Container(
-                  color: Colors.grey[300],
-                  child: const Center(
-                    child: Icon(Icons.image, color: Colors.grey),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+            );
+          }
 
-  Widget _buildStatColumn(String label, String count) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          count,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        Text(
-          label,
-          style: const TextStyle(
-            color: Colors.grey,
-          ),
-        ),
-      ],
+          if (!userSnapshot.hasData) {
+            return Center(child: CircularProgressIndicator());
+          }
+
+          final user = userSnapshot.data!;
+
+          return Column(
+            children: [
+              // 프로필 정보 섹션
+              Container(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    // 프로필 이미지
+                    CircleAvatar(
+                      radius: 50,
+                      backgroundImage: user.profileImageUrl != null
+                          ? NetworkImage(user.profileImageUrl!)
+                          : null,
+                      child: user.profileImageUrl == null
+                          ? Icon(Icons.person, size: 50)
+                          : null,
+                    ),
+                    SizedBox(height: 16),
+                    
+                    // 사용자 이름
+                    Text(
+                      user.username ?? '사용자',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    
+                    // 소개글
+                    if (user.bio != null && user.bio!.isNotEmpty)
+                      Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Text(user.bio!),
+                      ),
+                  ],
+                ),
+              ),
+
+              Divider(),
+
+              // 게시물 목록
+              Expanded(
+                child: StreamBuilder<List<Post>>(
+                  stream: _postService.getUserPosts(widget.userId),
+                  builder: (context, postSnapshot) {
+                    if (postSnapshot.hasError) {
+                      return Center(child: Text('게시물을 불러오는데 실패했습니다'));
+                    }
+
+                    if (!postSnapshot.hasData) {
+                      return Center(child: CircularProgressIndicator());
+                    }
+
+                    final posts = postSnapshot.data!;
+
+                    if (posts.isEmpty) {
+                      return Center(child: Text('아직 게시물이 없습니다'));
+                    }
+
+                    return GridView.builder(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        crossAxisSpacing: 2,
+                        mainAxisSpacing: 2,
+                      ),
+                      itemCount: posts.length,
+                      itemBuilder: (context, index) {
+                        final post = posts[index];
+                        return GestureDetector(
+                          onTap: () {
+                            Navigator.pushNamed(
+                              context,
+                              '/post-detail',
+                              arguments: post,
+                            );
+                          },
+                          child: Image.network(
+                            post.imageUrl,
+                            fit: BoxFit.cover,
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 } 

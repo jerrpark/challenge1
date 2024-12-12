@@ -15,7 +15,7 @@ class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
   
   final List<Widget> _screens = [
-    const HomeScreen(),
+    HomeScreen(),
     const Center(child: Text('검색')),
     const CreatePostScreen(),
     const Center(child: Text('활동')),
